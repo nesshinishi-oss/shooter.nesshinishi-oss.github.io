@@ -1,24 +1,1351 @@
-# Compiled class file
-*.class
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ローグライク・シューター</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #03030c;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none; /* スマホでのスクロール防止 */
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            background: linear-gradient(to bottom, #03030f, #0c0c1e);
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.15);
+            max-width: 100%;
+            max-height: 100%;
+        }
+        
+        /* UI Overlays */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(2, 2, 8, 0.8);
+            backdrop-filter: blur(6px);
+            z-index: 10;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
 
-# Log file
-*.log
+        #hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            box-sizing: border-box;
+        }
 
-# BlueJ files
-*.ctxt
+        /* アップグレードカードのスタイル */
+        .upgrade-card {
+            background: rgba(15, 20, 35, 0.95);
+            border: 2px solid #34d399;
+            border-radius: 16px;
+            padding: 20px;
+            margin: 10px;
+            width: 260px;
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+            box-shadow: 0 4px 20px rgba(52, 211, 153, 0.15);
+        }
+        .upgrade-card:hover {
+            transform: translateY(-5px);
+            border-color: #60a5fa;
+            box-shadow: 0 8px 30px rgba(96, 165, 251, 0.4);
+            background: rgba(25, 35, 55, 0.98);
+        }
+        .upgrade-icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+            filter: drop-shadow(0 0 8px rgba(255,255,255,0.3));
+        }
+        
+        .xp-bar-container {
+            width: 100%;
+            height: 12px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 6px;
+            margin-top: 8px;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.15);
+        }
+        #xp-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(to right, #3b82f6, #60a5fa);
+            transition: width 0.2s;
+            box-shadow: 0 0 12px #60a5fa;
+        }
+        
+        .hp-bar-container {
+            width: 180px;
+            height: 16px;
+            background: rgba(239, 68, 68, 0.15);
+            border-radius: 8px;
+            border: 1.5px solid rgba(255,255,255,0.25);
+            overflow: hidden;
+            position: relative;
+        }
+        #hp-bar {
+            height: 100%;
+            width: 100%;
+            background: linear-gradient(to right, #dc2626, #ef4444);
+            transition: width 0.15s;
+            box-shadow: 0 0 10px #ef4444;
+        }
+        #hp-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 10px;
+            font-weight: bold;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
 
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .btn-pulse {
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body class="text-white">
 
-# Package Files #
-*.jar
-*.war
-*.nar
-*.ear
-*.zip
-*.tar.gz
-*.rar
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
-hs_err_pid*
-replay_pid*
+    <!-- ヘッドアップディスプレイ (HUD) -->
+    <div id="hud">
+        <div class="flex justify-between items-start w-full">
+            <div>
+                <div class="text-2xl font-bold text-white drop-shadow-md tracking-wider">SCORE: <span id="score-display">0</span></div>
+                <div class="text-md text-cyan-400 drop-shadow-md mt-1 font-semibold">LEVEL: <span id="level-display">1</span></div>
+                <div id="shield-hud" class="flex gap-1 mt-2 text-blue-400">
+                    <!-- シールド数がアイコンで動的に表示されます -->
+                </div>
+            </div>
+            <div class="flex flex-col items-end">
+                <div class="text-xs text-red-300 mb-1 font-semibold">BARRIER INTEGRITY</div>
+                <div class="hp-bar-container">
+                    <div id="hp-bar"></div>
+                    <div id="hp-text">100 / 100</div>
+                </div>
+            </div>
+        </div>
+        <div class="w-full">
+            <div class="flex justify-between text-xs text-blue-300 px-1">
+                <span>SYSTEM UPGRADE PROCESS</span>
+                <span id="xp-text">0 / 100 XP</span>
+            </div>
+            <div class="xp-bar-container">
+                <div id="xp-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- スタート画面 -->
+    <div id="start-screen" class="overlay active">
+        <h1 class="text-6xl font-extrabold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-teal-300 to-blue-600 drop-shadow-[0_0_15px_rgba(6,182,212,0.5)] text-center leading-tight">
+            NEON STRIKER<br><span class="text-3xl tracking-widest text-teal-300">EX-EDITION</span>
+        </h1>
+        <p class="mb-8 text-gray-300 text-center max-w-md px-4 leading-relaxed text-sm">
+            迫りくる未知のネオン生命体を撃破せよ。<br>
+            ジェムを回収してレベルを上げ、最強の機体ビルドを構築しろ！<br>
+            <span class="text-xs text-cyan-400 font-semibold mt-2 block">【操作方法】ドラッグまたはマウス移動（自動射撃）</span>
+        </p>
+        <button id="start-btn" class="btn-pulse bg-gradient-to-r from-cyan-600 to-teal-500 hover:from-cyan-500 hover:to-teal-400 text-white font-bold py-4 px-12 rounded-full text-xl shadow-[0_0_25px_rgba(8,145,178,0.6)] transition-all">
+            システム起動（出撃）
+        </button>
+    </div>
+
+    <!-- レベルアップ（アップグレード）画面 -->
+    <div id="upgrade-screen" class="overlay">
+        <h2 class="text-5xl font-extrabold mb-1 text-green-400 drop-shadow-[0_0_15px_rgba(74,222,128,0.7)] tracking-wide">SYSTEM LEVEL UP</h2>
+        <p class="mb-8 text-gray-300 text-center text-sm">インストールする追加モジュールを選択してください。</p>
+        <div id="upgrade-options" class="flex flex-wrap justify-center max-w-5xl">
+            <!-- アップグレードカードがここに動的に生成されます -->
+        </div>
+    </div>
+
+    <!-- ゲームオーバー画面 -->
+    <div id="game-over-screen" class="overlay">
+        <h2 class="text-6xl font-extrabold mb-4 text-red-500 drop-shadow-[0_0_20px_rgba(239,68,68,0.8)] tracking-widest">SYSTEM DOWN</h2>
+        <div class="bg-gray-900/60 p-6 rounded-2xl border border-red-500/30 text-center min-w-[300px] mb-8">
+            <div class="text-xl text-gray-400 mb-1">獲得スコア</div>
+            <div id="final-score" class="text-4xl font-extrabold text-cyan-400 mb-4">0</div>
+            <div class="text-sm text-gray-400 mb-1">最終到達レベル</div>
+            <div id="final-level" class="text-2xl font-bold text-blue-400">1</div>
+        </div>
+        <button id="restart-btn" class="bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-500 hover:to-pink-500 text-white font-bold py-4 px-10 rounded-full text-lg shadow-[0_0_20px_rgba(220,38,38,0.6)] transition-all">
+            再起動（リトライ）
+        </button>
+    </div>
+</div>
+
+<script>
+/**
+ * ゲームのコアロジック
+ */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// UI Elements
+const ui = {
+    startScreen: document.getElementById('start-screen'),
+    upgradeScreen: document.getElementById('upgrade-screen'),
+    gameOverScreen: document.getElementById('game-over-screen'),
+    startBtn: document.getElementById('start-btn'),
+    restartBtn: document.getElementById('restart-btn'),
+    scoreDisplay: document.getElementById('score-display'),
+    levelDisplay: document.getElementById('level-display'),
+    hpBar: document.getElementById('hp-bar'),
+    hpText: document.getElementById('hp-text'),
+    xpBar: document.getElementById('xp-bar'),
+    xpText: document.getElementById('xp-text'),
+    shieldHud: document.getElementById('shield-hud'),
+    upgradeOptions: document.getElementById('upgrade-options'),
+    finalScore: document.getElementById('final-score'),
+    finalLevel: document.getElementById('final-level')
+};
+
+// Canvas Resize
+function resize() {
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    const maxWidth = 600; // 縦長アーケードスタイル
+    
+    if (width > maxWidth) {
+        width = maxWidth;
+    }
+    
+    canvas.width = width;
+    canvas.height = height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// --- ユーティリティ ---
+const random = (min, max) => Math.random() * (max - min) + min;
+const distance = (x1, y1, x2, y2) => Math.hypot(x2 - x1, y2 - y1);
+
+// --- ゲーム状態管理 ---
+const state = {
+    isPlaying: false,
+    isPaused: false,
+    score: 0,
+    level: 1,
+    xp: 0,
+    xpNeeded: 100,
+    frame: 0,
+    enemySpawnRate: 90, // フレームごとのスポーン間隔(徐々に減少)
+    baseEnemyHp: 20,
+    cameraShake: 0,
+    targetX: canvas.width / 2,
+    targetY: canvas.height * 0.8
+};
+
+// エンティティ配列
+let player;
+let bullets = [];
+let enemies = [];
+let particles = [];
+let gems = [];
+let stars = [];
+let explosions = []; // 爆発スキル用の爆風オブジェクト
+
+// --- 入力処理 ---
+function handleInput(e) {
+    if (!state.isPlaying || state.isPaused) return;
+    
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    
+    let clientX, clientY;
+    if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+    }
+
+    // キャンバス内の座標に変換
+    state.targetX = clientX - rect.left;
+    state.targetY = clientY - rect.top;
+    
+    // 境界制限
+    state.targetX = Math.max(20, Math.min(canvas.width - 20, state.targetX));
+    state.targetY = Math.max(20, Math.min(canvas.height - 20, state.targetY));
+}
+
+canvas.addEventListener('mousemove', handleInput);
+canvas.addEventListener('touchmove', handleInput, { passive: false });
+canvas.addEventListener('touchstart', handleInput, { passive: false });
+
+// --- アップグレード（ローグライク要素：全11種に拡張） ---
+const UPGRADE_POOL = [
+    { id: 'multishot', name: 'マルチショット', desc: '前方に発射するメイン弾数を増やします。', icon: '🚀', apply: (p) => p.multishot += 1 },
+    { id: 'damage', name: '火力アップ', desc: '弾の基本攻撃力をアップします。', icon: '💥', apply: (p) => p.damage += 8 },
+    { id: 'fireRate', name: '連射速度アップ', desc: '射撃の間隔をさらに短縮します。', icon: '⚡', apply: (p) => p.fireRate = Math.max(4, p.fireRate - 2) },
+    { id: 'hpMax', name: '最大HP増強', desc: '最大HPを+30し、HPを全快にします。', icon: '❤️', apply: (p) => { p.maxHp += 30; p.hp = p.maxHp; } },
+    { id: 'magnet', name: 'マグネット強化', desc: '経験値ジェムを引き寄せる範囲を拡大します。', icon: '🧲', apply: (p) => p.magnetRange += 60 },
+    { id: 'bulletSpeed', name: '弾速アップ', desc: '弾の飛行速度をアップします。', icon: '💨', apply: (p) => p.bulletSpeed += 3 },
+    { id: 'pierce', name: '貫通弾', desc: '弾が敵を貫通し、奥の敵も攻撃します。', icon: '☄️', apply: (p) => p.pierce += 1 },
+    
+    // 新追加スキル 4種
+    { id: 'shield', name: 'ナノシールド', desc: '被弾を完全に1回無効化するシールドを取得。12秒毎に再展開します。', icon: '🛡️', apply: (p) => { p.maxShield += 1; p.shield = Math.min(p.maxShield, p.shield + 1); } },
+    { id: 'explosive', name: 'エクスプロージョン', desc: '弾が命中した時に、周囲の敵を巻き込む爆発を起こします。', icon: '💣', apply: (p) => p.explosiveLevel += 1 },
+    { id: 'diagonal', name: '拡散スプレッド', desc: '左右斜め方向にも追加の弾を発射するようになります。', icon: '🏹', apply: (p) => p.diagonalShot = true },
+    { id: 'heal', name: '緊急修復', desc: 'ダメージを受けたHPを「50」即座に回復します。', icon: '💚', apply: (p) => p.hp = Math.min(p.maxHp, p.hp + 50) }
+];
+
+// --- クラス定義 ---
+
+class Player {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 12;
+        this.color = '#06b6d4'; // cyan-500
+        
+        // 基本ステータス
+        this.maxHp = 100;
+        this.hp = 100;
+        this.speed = 0.16; // Lerp追従速度
+        
+        // 攻撃ステータス
+        this.damage = 15;
+        this.fireRate = 16; 
+        this.fireTimer = 0;
+        this.bulletSpeed = 12;
+        this.multishot = 1; 
+        this.pierce = 0;
+        this.magnetRange = 100;
+
+        // 新スキル用ステータス
+        this.maxShield = 0;
+        this.shield = 0;
+        this.shieldTimer = 0;
+        this.shieldChargeDuration = 720; // 12秒 (60fps * 12)
+        this.explosiveLevel = 0;
+        this.diagonalShot = false;
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        
+        // グロー効果
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = this.color;
+        
+        // 機体の描画
+        ctx.beginPath();
+        ctx.moveTo(0, -this.radius * 1.5); 
+        ctx.lineTo(this.radius, this.radius); 
+        ctx.lineTo(0, this.radius * 0.5); 
+        ctx.lineTo(-this.radius, this.radius); 
+        ctx.closePath();
+        
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // エンジン炎
+        ctx.beginPath();
+        ctx.moveTo(-this.radius * 0.4, this.radius * 0.8);
+        ctx.lineTo(0, this.radius * (1.8 + Math.random() * 0.6)); 
+        ctx.lineTo(this.radius * 0.4, this.radius * 0.8);
+        ctx.fillStyle = '#fbbf24'; 
+        ctx.fill();
+
+        // ナノシールド描画（持っている場合）
+        if (this.shield > 0) {
+            ctx.shadowColor = '#60a5fa';
+            ctx.shadowBlur = 10;
+            ctx.strokeStyle = 'rgba(96, 165, 251, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            // シールド残数に応じて線のスタイルを変える
+            if (this.shield === 1) {
+                ctx.setLineDash([4, 4]);
+            } else {
+                ctx.setLineDash([]);
+            }
+            ctx.arc(0, 0, this.radius * 2.2, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // マグネット範囲表示
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.magnetRange, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(6, 182, 212, 0.03)';
+        ctx.setLineDash([]);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    update() {
+        // 自機移動
+        this.x += (state.targetX - this.x) * this.speed;
+        this.y += (state.targetY - this.y) * this.speed;
+
+        // シールドの自動回復処理
+        if (this.maxShield > 0 && this.shield < this.maxShield) {
+            this.shieldTimer++;
+            if (this.shieldTimer >= this.shieldChargeDuration) {
+                this.shield++;
+                this.shieldTimer = 0;
+                createParticles(this.x, this.y, '#60a5fa', 15, 3); // チャージエフェクト
+                updateHUD();
+            }
+        }
+
+        // オートショット
+        this.fireTimer++;
+        if (this.fireTimer >= this.fireRate) {
+            this.shoot();
+            this.fireTimer = 0;
+        }
+    }
+
+    shoot() {
+        const spreadAngle = 0.15; 
+        const startAngle = -Math.PI / 2; // 上向き
+        
+        // メインショット（マルチショット対応）
+        const offset = (this.multishot - 1) / 2;
+        for (let i = 0; i < this.multishot; i++) {
+            const angle = startAngle + (i - offset) * spreadAngle;
+            const vx = Math.cos(angle) * this.bulletSpeed;
+            const vy = Math.sin(angle) * this.bulletSpeed;
+            bullets.push(new Bullet(this.x, this.y - this.radius, vx, vy, this.damage, this.pierce, this.explosiveLevel, true));
+        }
+
+        // 追加スキル：斜め拡散ショット（スプレッド）
+        if (this.diagonalShot) {
+            const diagAngles = [-Math.PI/2 - 0.5, -Math.PI/2 + 0.5]; // 左右斜め
+            diagAngles.forEach(angle => {
+                const vx = Math.cos(angle) * (this.bulletSpeed * 0.9);
+                const vy = Math.sin(angle) * (this.bulletSpeed * 0.9);
+                bullets.push(new Bullet(this.x, this.y - this.radius, vx, vy, this.damage * 0.8, this.pierce, this.explosiveLevel, true));
+            });
+        }
+        
+        createParticles(this.x, this.y - this.radius, this.color, 3, 2);
+    }
+
+    takeDamage(amount) {
+        // シールドがある場合はシールドを優先消費
+        if (this.shield > 0) {
+            this.shield--;
+            this.shieldTimer = 0; // チャージタイマーを少しリセット
+            state.cameraShake = 6;
+            createParticles(this.x, this.y, '#60a5fa', 20, 5); // シールド破損エフェクト
+            updateHUD();
+            return;
+        }
+
+        // HP減少
+        this.hp -= amount;
+        state.cameraShake = 14; 
+        createParticles(this.x, this.y, '#ef4444', 15, 4); 
+        
+        if (this.hp <= 0) {
+            this.hp = 0;
+            gameOver();
+        }
+        updateHUD();
+    }
+}
+
+class Bullet {
+    constructor(x, y, vx, vy, damage, pierce, explosiveLevel, isPlayer = true) {
+        this.x = x;
+        this.y = y;
+        this.vx = vx;
+        this.vy = vy;
+        this.damage = damage;
+        this.pierce = pierce; 
+        this.explosiveLevel = explosiveLevel;
+        this.isPlayer = isPlayer;
+        this.radius = isPlayer ? 4 : 5;
+        this.color = isPlayer ? '#fef08a' : '#f87171'; // プレイヤー弾：黄、敵弾：赤
+        this.markedForDeletion = false;
+        
+        if (!isPlayer) {
+            this.vx *= random(0.95, 1.05);
+            this.vy *= random(0.95, 1.05);
+        }
+    }
+
+    draw() {
+        ctx.save();
+        ctx.globalAlpha = 0.95;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+        
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        
+        // 弾の中心部を明るく
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        
+        ctx.restore();
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+
+        if (this.x < -50 || this.x > canvas.width + 50 || this.y < -50 || this.y > canvas.height + 50) {
+            this.markedForDeletion = true;
+        }
+    }
+
+    triggerExplosion() {
+        if (this.explosiveLevel > 0) {
+            const range = 50 + (this.explosiveLevel * 15);
+            const dmg = this.damage * (0.4 + this.explosiveLevel * 0.2);
+            explosions.push(new Explosion(this.x, this.y, range, dmg));
+        }
+    }
+}
+
+// 爆風クラス（爆発スキル用）
+class Explosion {
+    constructor(x, y, maxRadius, damage) {
+        this.x = x;
+        this.y = y;
+        this.radius = 5;
+        this.maxRadius = maxRadius;
+        this.damage = damage;
+        this.life = 1.0;
+        this.markedForDeletion = false;
+        
+        // 派手なパーティクル
+        createParticles(this.x, this.y, '#f59e0b', 8, 3);
+    }
+
+    update() {
+        this.radius += (this.maxRadius - this.radius) * 0.2;
+        this.life -= 0.08;
+        if (this.life <= 0) {
+            this.markedForDeletion = true;
+        }
+
+        // 範囲内の敵全員にダメージ (多段ヒットを防ぐため1爆発につき1敵1回判定に簡易化)
+        enemies.forEach(e => {
+            if (!e.markedForDeletion && !e.hitByExplosions) {
+                e.hitByExplosions = e.hitByExplosions || [];
+                if (!e.hitByExplosions.includes(this)) {
+                    if (distance(this.x, this.y, e.x, e.y) < this.radius + e.radius) {
+                        e.takeDamage(this.damage);
+                        e.hitByExplosions.push(this);
+                    }
+                }
+            }
+        });
+    }
+
+    draw() {
+        ctx.save();
+        ctx.globalAlpha = this.life;
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = '#f59e0b'; // オレンジ/イエロー爆発
+        
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        const grad = ctx.createRadialGradient(this.x, this.y, this.radius * 0.2, this.x, this.y, this.radius);
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+        grad.addColorStop(0.3, 'rgba(245, 158, 11, 0.6)');
+        grad.addColorStop(1, 'rgba(239, 68, 68, 0)');
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+// --- 拡張された敵クラス (全8タイプ) ---
+class Enemy {
+    constructor(x, y, type) {
+        this.x = x;
+        this.y = y;
+        this.type = type; 
+        this.markedForDeletion = false;
+        this.hitByExplosions = []; // 爆風多段ヒット防止用
+        
+        const hpMultiplier = 1 + (state.level * 0.22); // レベルによる難易度スケーリング
+        
+        switch(type) {
+            case 0: // ベーシック (紫)
+                this.name = "スカウト";
+                this.radius = 15;
+                this.color = '#a855f7'; 
+                this.hp = state.baseEnemyHp * hpMultiplier;
+                this.vx = random(-1, 1);
+                this.vy = random(1.5, 2.3);
+                this.xpValue = 10;
+                this.damage = 10;
+                break;
+                
+            case 1: // ファスト (ピンク)
+                this.name = "ダッシャー";
+                this.radius = 11;
+                this.color = '#ec4899'; 
+                this.hp = state.baseEnemyHp * 0.5 * hpMultiplier;
+                this.vx = random(-1.5, 1.5);
+                this.vy = random(3.5, 4.8);
+                this.xpValue = 8;
+                this.damage = 6;
+                break;
+                
+            case 2: // タンク (青)
+                this.name = "ガライア";
+                this.radius = 26;
+                this.color = '#3b82f6'; 
+                this.hp = state.baseEnemyHp * 4.5 * hpMultiplier;
+                this.vx = random(-0.3, 0.3);
+                this.vy = random(0.6, 1.0);
+                this.xpValue = 35;
+                this.damage = 25;
+                break;
+                
+            case 3: // シューター (オレンジ)
+                this.name = "ブレイザー";
+                this.radius = 18;
+                this.color = '#f97316'; 
+                this.hp = state.baseEnemyHp * 1.5 * hpMultiplier;
+                this.vx = random(-0.8, 0.8);
+                this.vy = random(1.0, 1.6);
+                this.xpValue = 20;
+                this.damage = 15;
+                this.fireRate = 130; 
+                this.fireTimer = random(0, 60);
+                break;
+
+            // 新エネミー 4種
+            case 4: // スプリッター (緑：倒すと2つに分裂する)
+                this.name = "スプリッター";
+                this.radius = 21;
+                this.color = '#10b981'; // emerald-500
+                this.hp = state.baseEnemyHp * 2.2 * hpMultiplier;
+                this.vx = random(-0.7, 0.7);
+                this.vy = random(1.1, 1.8);
+                this.xpValue = 25;
+                this.damage = 15;
+                break;
+
+            case 5: // 分裂後のミニ機体 (黄緑)
+                this.name = "スプリット";
+                this.radius = 9;
+                this.color = '#84cc16'; // lime-500
+                this.hp = state.baseEnemyHp * 0.3 * hpMultiplier;
+                this.vx = random(-2.5, 2.5); // 散らばる
+                this.vy = random(2.5, 4.0);
+                this.xpValue = 4;
+                this.damage = 5;
+                break;
+
+            case 6: // コメット自爆特攻 (赤)
+                this.name = "コメット";
+                this.radius = 13;
+                this.color = '#ef4444'; // red-500
+                this.hp = state.baseEnemyHp * 0.9 * hpMultiplier;
+                this.vx = random(-0.5, 0.5);
+                this.vy = random(1.5, 2.5);
+                this.xpValue = 18;
+                this.damage = 20;
+                this.isCharging = false;
+                break;
+
+            case 7: // ネオン・ジャガーノート (白金：ボス・エリート)
+                this.name = "ジャガーノート";
+                this.radius = 35;
+                this.color = '#f59e0b'; // amber-500
+                this.hp = state.baseEnemyHp * 12 * hpMultiplier;
+                this.vx = random(-0.2, 0.2);
+                this.vy = 0.5;
+                this.xpValue = 100;
+                this.damage = 40;
+                this.fireRate = 160;
+                this.fireTimer = 0;
+                break;
+        }
+        this.maxHp = this.hp;
+    }
+
+    draw() {
+        ctx.save();
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = this.color;
+        
+        ctx.translate(this.x, this.y);
+        
+        // 特攻機（コメット）が突撃中は点滅を激しくする
+        if (this.type === 6 && this.isCharging) {
+            ctx.shadowBlur = 20 + Math.sin(state.frame * 0.5) * 8;
+        }
+
+        // 形状描画
+        ctx.beginPath();
+        if (this.type === 0) { // スカウト
+            ctx.moveTo(0, -this.radius);
+            ctx.lineTo(this.radius, 0);
+            ctx.lineTo(0, this.radius);
+            ctx.lineTo(-this.radius, 0);
+        } else if (this.type === 1) { // ダッシャー
+            ctx.moveTo(0, this.radius * 1.2);
+            ctx.lineTo(this.radius * 0.8, -this.radius);
+            ctx.lineTo(-this.radius * 0.8, -this.radius);
+        } else if (this.type === 2) { // ガライア
+            for (let i = 0; i < 6; i++) {
+                ctx.lineTo(this.radius * Math.cos(i * Math.PI / 3), this.radius * Math.sin(i * Math.PI / 3));
+            }
+        } else if (this.type === 3) { // ブレイザー
+            ctx.rotate(state.frame * -0.02);
+            ctx.rect(-this.radius, -this.radius, this.radius*2, this.radius*2);
+        } else if (this.type === 4) { // スプリッター
+            // 十字架のようなトゲトゲ
+            ctx.moveTo(0, -this.radius * 1.2);
+            ctx.lineTo(this.radius * 0.4, -this.radius * 0.4);
+            ctx.lineTo(this.radius * 1.2, 0);
+            ctx.lineTo(this.radius * 0.4, this.radius * 0.4);
+            ctx.lineTo(0, this.radius * 1.2);
+            ctx.lineTo(-this.radius * 0.4, this.radius * 0.4);
+            ctx.lineTo(-this.radius * 1.2, 0);
+            ctx.lineTo(-this.radius * 0.4, -this.radius * 0.4);
+        } else if (this.type === 5) { // ミニスプリット
+            // 小さなトライアングル
+            ctx.moveTo(0, -this.radius);
+            ctx.lineTo(this.radius, this.radius);
+            ctx.lineTo(-this.radius, this.radius);
+        } else if (this.type === 6) { // コメット
+            // 鋭いトゲ型
+            ctx.moveTo(0, -this.radius * 1.3);
+            ctx.lineTo(this.radius * 0.6, 0);
+            ctx.lineTo(0, this.radius * 0.6);
+            ctx.lineTo(-this.radius * 0.6, 0);
+        } else if (this.type === 7) { // ジャガーノート
+            ctx.rotate(state.frame * 0.01);
+            // 八角形
+            for (let i = 0; i < 8; i++) {
+                ctx.lineTo(this.radius * Math.cos(i * Math.PI / 4), this.radius * Math.sin(i * Math.PI / 4));
+            }
+        }
+        ctx.closePath();
+        
+        ctx.fillStyle = 'rgba(5, 5, 15, 0.9)';
+        ctx.fill();
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // HPバーの描画
+        if (this.hp < this.maxHp) {
+            ctx.rotate(this.type === 3 || this.type === 7 ? -state.frame * 0.01 : 0); // 回転無効化
+            const hpPercent = this.hp / this.maxHp;
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.4)';
+            ctx.fillRect(-this.radius, -this.radius - 12, this.radius * 2, 5);
+            ctx.fillStyle = '#10b981'; 
+            ctx.fillRect(-this.radius, -this.radius - 12, this.radius * 2 * hpPercent, 5);
+        }
+
+        ctx.restore();
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // 壁との衝突（バウンド：中ボス以外）
+        if (this.type !== 7) {
+            if (this.x - this.radius < 0 || this.x + this.radius > canvas.width) {
+                this.vx *= -1;
+                this.x = Math.max(this.radius, Math.min(canvas.width - this.radius, this.x));
+            }
+        } else {
+            // 中ボスは壁際でバウンドせず、中央へ寄る
+            if (this.x - this.radius < 10 || this.x + this.radius > canvas.width - 10) {
+                this.vx *= -1;
+            }
+        }
+
+        // 種類ごとの特殊AI行動
+        if (this.type === 3) { // シューター
+            this.fireTimer++;
+            if (this.fireTimer >= this.fireRate) {
+                this.shootSingle();
+                this.fireTimer = 0;
+            }
+        } else if (this.type === 6) { // コメット(特攻機)
+            if (player && !this.isCharging) {
+                // 一定距離に入ったらターゲットロック＆突撃開始
+                const distToPlayer = distance(this.x, this.y, player.x, player.y);
+                if (distToPlayer < 240) {
+                    this.isCharging = true;
+                    this.color = '#ef4444';
+                    // 突進角度設定
+                    const angle = Math.atan2(player.y - this.y, player.x - this.x);
+                    this.vx = Math.cos(angle) * 7.5;
+                    this.vy = Math.sin(angle) * 7.5;
+                }
+            }
+        } else if (this.type === 7) { // ジャガーノート (中ボス級)
+            this.fireTimer++;
+            if (this.fireTimer >= this.fireRate) {
+                this.shootRadial();
+                this.fireTimer = 0;
+            }
+        }
+
+        // 画面下部へ逃げ切ったら削除
+        if (this.y > canvas.height + this.radius * 2) {
+            this.markedForDeletion = true;
+        }
+    }
+
+    shootSingle() {
+        if (!player) return;
+        const angle = Math.atan2(player.y - this.y, player.x - this.x);
+        const speed = 4.5 + (state.level * 0.15); 
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed;
+        bullets.push(new Bullet(this.x, this.y, vx, vy, 12 + state.level * 2, 0, 0, false));
+    }
+
+    shootRadial() {
+        if (!player) return;
+        // 周囲に大量の弾を発射する
+        const bulletCount = 8;
+        const speed = 3.5 + (state.level * 0.1);
+        for (let i = 0; i < bulletCount; i++) {
+            const angle = (Math.PI * 2 / bulletCount) * i + (state.frame * 0.05);
+            const vx = Math.cos(angle) * speed;
+            const vy = Math.sin(angle) * speed;
+            bullets.push(new Bullet(this.x, this.y, vx, vy, 15 + state.level * 3, 0, 0, false));
+        }
+        state.cameraShake = 4;
+    }
+
+    takeDamage(amount) {
+        this.hp -= amount;
+        createParticles(this.x, this.y, '#ffffff', 2, 2); // ヒット時小火花
+        
+        if (this.hp <= 0) {
+            this.die();
+        }
+    }
+
+    die() {
+        this.markedForDeletion = true;
+        createParticles(this.x, this.y, this.color, this.type === 7 ? 40 : 15, 4);
+        
+        // 経験値ジェム生成
+        gems.push(new Gem(this.x, this.y, this.xpValue));
+
+        // 特殊行動: スプリッター(分裂型)が死亡した時はミニスプリットを2機生み出す
+        if (this.type === 4) {
+            for (let i = 0; i < 2; i++) {
+                const subX = this.x + (i === 0 ? -15 : 15);
+                const subEnemy = new Enemy(subX, this.y, 5);
+                enemies.push(subEnemy);
+            }
+        }
+        
+        addScore(this.xpValue * 10);
+    }
+}
+
+// --- 経験値ジェムクラス ---
+class Gem {
+    constructor(x, y, value) {
+        this.x = x;
+        this.y = y;
+        this.value = value;
+        this.radius = 4 + Math.min(value / 10, 6); 
+        this.color = '#34d399'; // emerald-400
+        this.markedForDeletion = false;
+        
+        this.vx = random(-2, 2);
+        this.vy = random(-2, 2);
+        this.friction = 0.94;
+        this.homingSpeed = 0;
+    }
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = this.color;
+        
+        // ひし形ジェム
+        ctx.beginPath();
+        ctx.moveTo(0, -this.radius);
+        ctx.lineTo(this.radius, 0);
+        ctx.lineTo(0, this.radius);
+        ctx.lineTo(-this.radius, 0);
+        ctx.closePath();
+        
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        
+        ctx.restore();
+    }
+
+    update() {
+        this.vx *= this.friction;
+        this.vy *= this.friction;
+        this.vy += 0.2; // ゆっくり沈む
+
+        if (player) {
+            const dist = distance(this.x, this.y, player.x, player.y);
+            // マグネット吸い込み
+            if (dist < player.magnetRange) {
+                this.homingSpeed += 0.6;
+                const angle = Math.atan2(player.y - this.y, player.x - this.x);
+                this.vx += Math.cos(angle) * this.homingSpeed;
+                this.vy += Math.sin(angle) * this.homingSpeed;
+                // 吸い込み中は摩擦を弱めて引っ張りやすくする
+                this.vx *= 0.9;
+                this.vy *= 0.9;
+            } else {
+                this.homingSpeed = 0;
+            }
+
+            // 取得判定
+            if (dist < player.radius + this.radius + 12) {
+                this.markedForDeletion = true;
+                addXp(this.value);
+            }
+        }
+
+        this.x += this.vx;
+        this.y += this.vy;
+
+        if (this.y > canvas.height + 50) {
+            this.markedForDeletion = true;
+        }
+    }
+}
+
+// --- パーティクルクラス ---
+class Particle {
+    constructor(x, y, color, size, speed) {
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        this.radius = random(1, size);
+        const angle = random(0, Math.PI * 2);
+        const vel = random(1, speed);
+        this.vx = Math.cos(angle) * vel;
+        this.vy = Math.sin(angle) * vel;
+        this.life = 1.0; 
+        this.decay = random(0.02, 0.05);
+        this.markedForDeletion = false;
+    }
+
+    draw() {
+        ctx.save();
+        ctx.globalAlpha = this.life;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.restore();
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life -= this.decay;
+        if (this.life <= 0) {
+            this.markedForDeletion = true;
+        }
+    }
+}
+
+// --- 背景の星クラス ---
+class Star {
+    constructor() {
+        this.reset(true);
+    }
+    
+    reset(randomY = false) {
+        this.x = random(0, canvas.width);
+        this.y = randomY ? random(0, canvas.height) : -10;
+        this.size = random(0.5, 2.5);
+        this.speed = this.size * 1.5; 
+        this.alpha = random(0.2, 0.9);
+    }
+
+    draw() {
+        ctx.globalAlpha = this.alpha;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+        ctx.globalAlpha = 1.0;
+    }
+
+    update() {
+        this.y += this.speed * (1 + state.level * 0.05);
+        if (this.y > canvas.height) {
+            this.reset();
+        }
+    }
+}
+
+// --- システム関数群 ---
+
+function createParticles(x, y, color, count, sizeSpeedBase) {
+    for (let i = 0; i < count; i++) {
+        particles.push(new Particle(x, y, color, sizeSpeedBase * 2, sizeSpeedBase * 3));
+    }
+}
+
+function addScore(points) {
+    state.score += points;
+    ui.scoreDisplay.innerText = state.score;
+}
+
+function addXp(amount) {
+    state.xp += amount;
+    if (state.xp >= state.xpNeeded) {
+        state.xp -= state.xpNeeded;
+        levelUp();
+    }
+    updateHUD();
+}
+
+function updateHUD() {
+    // HPバーとテキスト
+    const hpPercent = Math.max(0, player.hp / player.maxHp) * 100;
+    ui.hpBar.style.width = `${hpPercent}%`;
+    ui.hpText.innerText = `${Math.ceil(player.hp)} / ${player.maxHp}`;
+    if (hpPercent < 30) {
+        ui.hpBar.style.background = 'linear-gradient(to right, #ef4444, #f43f5e)';
+    } else {
+        ui.hpBar.style.background = 'linear-gradient(to right, #dc2626, #ef4444)';
+    }
+
+    // XPバー
+    const xpPercent = Math.min(100, (state.xp / state.xpNeeded) * 100);
+    ui.xpBar.style.width = `${xpPercent}%`;
+    ui.xpText.innerText = `${state.xp} / ${state.xpNeeded} XP`;
+
+    // シールドHUD
+    ui.shieldHud.innerHTML = '';
+    for (let i = 0; i < player.shield; i++) {
+        const sIcon = document.createElement('span');
+        sIcon.innerText = '🛡️';
+        sIcon.className = 'text-lg drop-shadow-[0_0_5px_rgba(96,165,251,0.8)]';
+        ui.shieldHud.appendChild(sIcon);
+    }
+}
+
+function levelUp() {
+    state.level++;
+    ui.levelDisplay.innerText = state.level;
+    
+    // 必要経験値スケーリング
+    state.xpNeeded = Math.floor(state.xpNeeded * 1.4) + 20;
+    
+    // スポーン率をあげる
+    state.enemySpawnRate = Math.max(16, state.enemySpawnRate - 6); 
+    
+    state.isPaused = true;
+    
+    // アップグレード選択肢
+    generateUpgradeOptions();
+    ui.upgradeScreen.classList.add('active');
+}
+
+function generateUpgradeOptions() {
+    ui.upgradeOptions.innerHTML = '';
+    
+    // 11種類プールからランダムに3枚を選択
+    const shuffled = [...UPGRADE_POOL].sort(() => 0.5 - Math.random());
+    const selectedOptions = shuffled.slice(0, 3); 
+    
+    selectedOptions.forEach(opt => {
+        const card = document.createElement('div');
+        card.className = 'upgrade-card';
+        card.innerHTML = `
+            <div class="upgrade-icon">${opt.icon}</div>
+            <h3 class="text-xl font-bold text-teal-300 mb-2 tracking-wide">${opt.name}</h3>
+            <p class="text-xs text-gray-300 leading-relaxed">${opt.desc}</p>
+        `;
+        
+        card.addEventListener('click', () => {
+            opt.apply(player); 
+            createParticles(player.x, player.y, '#34d399', 30, 4); // レベルアップパーティクル
+            resumeGame();
+        });
+        
+        ui.upgradeOptions.appendChild(card);
+    });
+}
+
+function resumeGame() {
+    ui.upgradeScreen.classList.remove('active');
+    state.isPaused = false;
+    updateHUD();
+}
+
+function spawnEnemy() {
+    const x = random(30, canvas.width - 30);
+    const y = -40;
+    
+    const rand = Math.random();
+    let type = 0; // 基本(スカウト)
+    
+    // レベルによるスポーンロジック(敵の種類増強)
+    if (state.level >= 10) {
+        if (rand < 0.08) type = 7;      // ジャガーノート (8%)
+        else if (rand < 0.20) type = 6; // コメット特攻 (12%)
+        else if (rand < 0.35) type = 4; // スプリッター分裂 (15%)
+        else if (rand < 0.50) type = 3; // シューター (15%)
+        else if (rand < 0.65) type = 2; // タンク (15%)
+        else if (rand < 0.80) type = 1; // ファスト (15%)
+    } else if (state.level >= 7) {
+        if (rand < 0.04) type = 7;      // ジャガーノート (レア)
+        else if (rand < 0.18) type = 6; // コメット特攻
+        else if (rand < 0.35) type = 4; // スプリッター
+        else if (rand < 0.55) type = 3; // シューター
+        else if (rand < 0.75) type = 2; // タンク
+        else if (rand < 0.90) type = 1; // ファスト
+    } else if (state.level >= 4) {
+        if (rand < 0.15) type = 6;      // コメット特攻
+        else if (rand < 0.30) type = 4; // スプリッター
+        else if (rand < 0.50) type = 3; // シューター
+        else if (rand < 0.75) type = 2; // タンク
+        else if (rand < 0.90) type = 1; // ファスト
+    } else if (state.level >= 2) {
+        if (rand < 0.20) type = 1;      // ファスト
+        else if (rand < 0.40) type = 3; // シューター
+    }
+    
+    enemies.push(new Enemy(x, y, type));
+}
+
+// --- メインゲームループ ---
+
+function startGame() {
+    player = new Player(canvas.width / 2, canvas.height * 0.8);
+    bullets = [];
+    enemies = [];
+    particles = [];
+    gems = [];
+    explosions = [];
+    
+    stars = [];
+    for(let i=0; i<100; i++) stars.push(new Star());
+
+    state.isPlaying = true;
+    state.isPaused = false;
+    state.score = 0;
+    state.level = 1;
+    state.xp = 0;
+    state.xpNeeded = 100;
+    state.frame = 0;
+    state.enemySpawnRate = 90;
+    
+    ui.startScreen.classList.remove('active');
+    ui.gameOverScreen.classList.remove('active');
+    
+    ui.scoreDisplay.innerText = '0';
+    ui.levelDisplay.innerText = '1';
+    updateHUD();
+    
+    gameLoop();
+}
+
+function gameOver() {
+    state.isPlaying = false;
+    ui.finalScore.innerText = state.score;
+    ui.finalLevel.innerText = state.level;
+    ui.gameOverScreen.classList.add('active');
+}
+
+function gameLoop() {
+    if (!state.isPlaying) return;
+    
+    requestAnimationFrame(gameLoop);
+    
+    if (state.isPaused) return;
+
+    state.frame++;
+    
+    // 背景・カメラシェイククリア
+    ctx.save();
+    if (state.cameraShake > 0) {
+        const dx = random(-state.cameraShake, state.cameraShake);
+        const dy = random(-state.cameraShake, state.cameraShake);
+        ctx.translate(dx, dy);
+        state.cameraShake *= 0.88; // 揺れの減衰
+        if (state.cameraShake < 0.5) state.cameraShake = 0;
+    }
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // 星更新
+    stars.forEach(s => {
+        s.update();
+        s.draw();
+    });
+
+    // スポーン
+    if (state.frame % state.enemySpawnRate === 0) {
+        spawnEnemy();
+    }
+
+    // 爆風(エクスプロージョン)更新・描画
+    for (let i = explosions.length - 1; i >= 0; i--) {
+        const ex = explosions[i];
+        ex.update();
+        ex.draw();
+        if (ex.markedForDeletion) explosions.splice(i, 1);
+    }
+
+    // プレイヤー更新
+    if (player) {
+        player.update();
+        player.draw();
+    }
+
+    // 経験値更新
+    for (let i = gems.length - 1; i >= 0; i--) {
+        const g = gems[i];
+        g.update();
+        g.draw();
+        if (g.markedForDeletion) gems.splice(i, 1);
+    }
+
+    // 弾丸衝突処理
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.update();
+        b.draw();
+        
+        // プレイヤーの弾 vs 敵
+        if (b.isPlayer && !b.markedForDeletion) {
+            for (let j = 0; j < enemies.length; j++) {
+                const e = enemies[j];
+                if (!e.markedForDeletion) {
+                    if (distance(b.x, b.y, e.x, e.y) < b.radius + e.radius) {
+                        e.takeDamage(b.damage);
+                        
+                        // 爆発スキル発動
+                        b.triggerExplosion();
+
+                        // 貫通弾処理
+                        if (b.pierce > 0) {
+                            b.pierce--;
+                            b.damage *= 0.7; // 貫通後は少し威力を下げる
+                        } else {
+                            b.markedForDeletion = true;
+                        }
+                        break;
+                    }
+                }
+            }
+        } 
+        // 敵の弾 vs プレイヤー
+        else if (!b.isPlayer && !b.markedForDeletion && player) {
+            if (distance(b.x, b.y, player.x, player.y) < b.radius + player.radius * 0.8) {
+                player.takeDamage(b.damage);
+                b.markedForDeletion = true;
+            }
+        }
+
+        if (b.markedForDeletion) bullets.splice(i, 1);
+    }
+
+    // 敵衝突・体当たり判定
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        e.update();
+        e.draw();
+        
+        // 体当たり
+        if (player && !e.markedForDeletion) {
+            if (distance(e.x, e.y, player.x, player.y) < e.radius + player.radius * 0.8) {
+                player.takeDamage(e.damage);
+                e.die(); 
+            }
+        }
+
+        if (e.markedForDeletion) enemies.splice(i, 1);
+    }
+
+    // パーティクル
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.update();
+        p.draw();
+        if (p.markedForDeletion) particles.splice(i, 1);
+    }
+
+    ctx.restore();
+}
+
+// イベント
+ui.startBtn.addEventListener('click', startGame);
+ui.restartBtn.addEventListener('click', startGame);
+
+function initDraw() {
+    stars = [];
+    for(let i=0; i<100; i++) stars.push(new Star());
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    stars.forEach(s => { s.reset(true); s.draw(); });
+}
+initDraw();
+
+</script>
+</body>
+</html>
